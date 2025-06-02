@@ -1,11 +1,42 @@
 import WebSocket, { WebSocketServer } from 'ws';
+import sqlite3 from 'sqlite3';
 
-// Simulated Chronos interface (stub for your GPU/database)
+// Initialize SQLite database
+const db = new sqlite3.Database('./users.db', (err) => {
+  if (err) {
+    console.error('Failed to open SQLite database:', err.message);
+  } else {
+    console.log('Connected to SQLite database: users.db');
+    // Create users table if it doesn't exist
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        password TEXT NOT NULL,
+        currentSKEL INTEGER NOT NULL
+      )
+    `);
+  }
+});
+
+// Simulated Chronos interface (now using SQLite)
 const chronosInterface = {
   sendRegistrationInfo(userData) {
-    console.log('Sending registration info to Chronos:', userData);
-    // TODO: Implement actual communication with Chronos (e.g., HTTP request, WebSocket)
-    return true; // Simulated success
+    return new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO users (id, name, password, currentSKEL) VALUES (?, ?, ?, ?)`,
+        [userData.id, userData.name, userData.password, userData.currentSKEL],
+        (err) => {
+          if (err) {
+            console.error('Failed to store user in Chronos:', err.message);
+            reject(err);
+          } else {
+            console.log('User stored in Chronos:', userData);
+            resolve(true);
+          }
+        }
+      );
+    });
   }
 };
 
@@ -23,7 +54,7 @@ class Router {
       const port = req.socket.remotePort;
       console.log(`New device connected: ${ip}:${port}`);
 
-      ws.on('message', (message) => {
+      ws.on('message', async (message) => {
         let data;
         try {
           data = JSON.parse(message);
@@ -34,7 +65,7 @@ class Router {
 
         switch (data.type) {
           case 'register':
-            this.handleRegister(data.did, ip, port, ws, data.userData);
+            await this.handleRegister(data.did, ip, port, ws, data.userData);
             break;
           case 'find':
             this.handleFind(ws, data.targetDid);
@@ -58,15 +89,15 @@ class Router {
   }
 
   // Register a device in the node table and send user data to Chronos
-  handleRegister(did, ip, port, ws, userData) {
+  async handleRegister(did, ip, port, ws, userData) {
     this.nodeTable.set(did, { ip, port, ws });
     console.log(`Device registered: ${did} at ${ip}:${port}`);
 
     // Send user data to Chronos
-    const success = chronosInterface.sendRegistrationInfo(userData);
-    if (success) {
+    try {
+      await chronosInterface.sendRegistrationInfo(userData);
       ws.send(JSON.stringify({ type: 'registered', did }));
-    } else {
+    } catch (error) {
       ws.send(JSON.stringify({ type: 'error', message: 'Failed to register with Chronos' }));
     }
   }

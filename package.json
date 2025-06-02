@@ -19,6 +19,7 @@
   "homepage": "https://github.com/LEXICALALCHEMIST/Neurom-Protocol#readme",
   "dependencies": {
     "simple-peer": "^9.11.1",
+    "sqlite3": "^5.1.7",
     "ws": "^8.18.2"
   }
 }
