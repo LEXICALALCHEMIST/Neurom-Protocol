@@ -7,25 +7,26 @@ const db = new sqlite3.Database('./users.db', (err) => {
     console.error('Failed to open SQLite database:', err.message);
   } else {
     console.log('Connected to SQLite database: users.db');
-    // Create users table if it doesn't exist
+    // Create users table with morphAddress field
     db.run(`
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         password TEXT NOT NULL,
-        currentSKEL INTEGER NOT NULL
+        currentSKEL INTEGER NOT NULL,
+        morphAddress TEXT NOT NULL
       )
     `);
   }
 });
 
-// Simulated Chronos interface (now using SQLite)
+// Simulated Chronos interface (using SQLite)
 const chronosInterface = {
   sendRegistrationInfo(userData) {
     return new Promise((resolve, reject) => {
       db.run(
-        `INSERT INTO users (id, name, password, currentSKEL) VALUES (?, ?, ?, ?)`,
-        [userData.id, userData.name, userData.password, userData.currentSKEL],
+        `INSERT INTO users (id, name, password, currentSKEL, morphAddress) VALUES (?, ?, ?, ?, ?)`,
+        [userData.id, userData.name, userData.password, userData.currentSKEL, userData.morphAddress],
         (err) => {
           if (err) {
             console.error('Failed to store user in Chronos:', err.message);
@@ -70,6 +71,12 @@ class Router {
           case 'find':
             this.handleFind(ws, data.targetDid);
             break;
+          case 'signal':
+            this.handleSignal(data.targetDid, data.signalData);
+            break;
+          case 'list-users':
+            await this.listUsers(ws);
+            break;
           default:
             console.error('Unknown message type:', data.type);
         }
@@ -110,6 +117,30 @@ class Router {
     } else {
       ws.send(JSON.stringify({ type: 'not-found', did: targetDid }));
     }
+  }
+
+  // Relay WebRTC signaling messages to the target device
+  handleSignal(targetDid, signalData) {
+    const target = this.nodeTable.get(targetDid);
+    if (target && target.ws) {
+      target.ws.send(JSON.stringify({ type: 'signal', signalData }));
+      console.log(`Relayed signaling data to ${targetDid}`);
+    } else {
+      console.error(`Target device ${targetDid} not found for signaling`);
+    }
+  }
+
+  // List all users stored in the database
+  listUsers(ws) {
+    db.all(`SELECT * FROM users`, [], (err, rows) => {
+      if (err) {
+        console.error('Failed to query users:', err.message);
+        ws.send(JSON.stringify({ type: 'error', message: 'Failed to query users' }));
+        return;
+      }
+      console.log('Stored users:', rows);
+      ws.send(JSON.stringify({ type: 'users', data: rows }));
+    });
   }
 
   // Route a message from sender to target (used for non-WebRTC messages)
