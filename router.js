@@ -7,16 +7,23 @@ const db = new sqlite3.Database('./users.db', (err) => {
     console.error('Failed to open SQLite database:', err.message);
   } else {
     console.log('Connected to SQLite database: users.db');
-    // Create users table with morphAddress field
-    db.run(`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        password TEXT NOT NULL,
-        currentSKEL INTEGER NOT NULL,
-        morphAddress TEXT NOT NULL
-      )
-    `);
+    // Drop the existing table and recreate with the correct schema
+    db.serialize(() => {
+      db.run(`DROP TABLE IF EXISTS users`, (err) => {
+        if (err) console.error('Failed to drop users table:', err.message);
+      });
+      db.run(`
+        CREATE TABLE users (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          password TEXT NOT NULL,
+          currentSKEL INTEGER NOT NULL,
+          morphAddress TEXT NOT NULL
+        )
+      `, (err) => {
+        if (err) console.error('Failed to create users table:', err.message);
+      });
+    });
   }
 });
 
@@ -29,18 +36,19 @@ const chronosInterface = {
         [userData.id, userData.name, userData.password, userData.currentSKEL, userData.morphAddress],
         (err) => {
           if (err) {
-            console.error('Failed to store user in Chronos:', err.message);
+            console.error('Failed to store user in Chronos:', err.message, err);
             reject(err);
-          } else {
-            console.log('User stored in Chronos:', userData);
-            resolve(true);
+            return;
           }
+          console.log('User stored in Chronos:', userData);
+          resolve(true);
         }
       );
     });
   }
 };
 
+// Rest of the code remains unchanged
 class Router {
   constructor() {
     this.nodeTable = new Map(); // Map<DID, { ip, port, ws }>
@@ -66,10 +74,12 @@ class Router {
 
         switch (data.type) {
           case 'register':
-            await this.handleRegister(data.did, ip, port, ws, data.userData);
+            await this.handleRegister(data.did, ip, port, ws, data.userData).catch((err) => {
+              ws.send(JSON.stringify({ type: 'error', message: `Failed to register with Chronos: ${err.message}` }));
+            });
             break;
           case 'find':
-            this.handleFind(ws, data.targetDid);
+            this.handleFind(ws, data.targetDid, data.transactionData);
             break;
           case 'signal':
             this.handleSignal(data.targetDid, data.signalData);
@@ -101,19 +111,21 @@ class Router {
     console.log(`Device registered: ${did} at ${ip}:${port}`);
 
     // Send user data to Chronos
-    try {
-      await chronosInterface.sendRegistrationInfo(userData);
-      ws.send(JSON.stringify({ type: 'registered', did }));
-    } catch (error) {
-      ws.send(JSON.stringify({ type: 'error', message: 'Failed to register with Chronos' }));
-    }
+    await chronosInterface.sendRegistrationInfo(userData);
+    ws.send(JSON.stringify({ type: 'registered', did }));
   }
 
   // Find a device by DID and send its network info to the requester
-  handleFind(ws, targetDid) {
+  handleFind(ws, targetDid, transactionData) {
     const target = this.nodeTable.get(targetDid);
     if (target) {
-      ws.send(JSON.stringify({ type: 'found', did: targetDid, ip: target.ip, port: target.port }));
+      ws.send(JSON.stringify({ 
+        type: 'found', 
+        did: targetDid, 
+        ip: target.ip, 
+        port: target.port,
+        transactionData // Pass transaction data to the initiator
+      }));
     } else {
       ws.send(JSON.stringify({ type: 'not-found', did: targetDid }));
     }
