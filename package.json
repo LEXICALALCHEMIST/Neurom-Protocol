@@ -1,0 +1,24 @@
+{
+  "name": "neurom-protocol",
+  "version": "1.0.0",
+  "description": "Protocol Layer for LSD + Zeta|Morph Logic NEURUM Protocol: Hive GPU Router for Zero-Logic Symbolic Computing",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LEXICALALCHEMIST/Neurom-Protocol.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/LEXICALALCHEMIST/Neurom-Protocol/issues"
+  },
+  "homepage": "https://github.com/LEXICALALCHEMIST/Neurom-Protocol#readme",
+  "dependencies": {
+    "simple-peer": "^9.11.1",
+    "ws": "^8.18.2"
+  }
+}
