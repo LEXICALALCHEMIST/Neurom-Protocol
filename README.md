@@ -16,6 +16,36 @@ LSD: the recursive financial token (value = intent collapsed)
 User devices: operating as morphic nodes in a hive-based GPU mesh
 
 
+FILE STRUCTURE----------------------------------------------------------------------------------------------
+Neurom/
+├── server.js # Main Express server entry point
+├── package.json
+├── .env # For env variables (port, db path, secrets)
+├── /api # Routes and API versioning
+│ ├── index.js # Global router
+│ ├── auth.js
+│ ├── user.js
+│ ├── morph.js
+│ ├── mesh.js
+├── /controllers # Business logic per route
+│ ├── authController.js
+│ ├── userController.js
+│ ├── morphController.js
+│ ├── meshController.js
+├── /models # DB models or data access layer
+│ ├── User.js
+│ ├── MorphOp.js
+│ ├── Peer.js
+├── /db # DB init and utils
+│ ├── db.js # SQLite connection pool
+│ ├── migrations/ # (optional) migration scripts
+├── /utils # Utilities
+│ ├── jwt.js # JWT helpers
+│ ├── morphUtils.js # Morph validation helpers
+├── /middleware # Middleware layer
+│ ├── authMiddleware.js # JWT validation middleware
+├── /logs # (optional) logs folder
+├── README.md
 
 ---
 
