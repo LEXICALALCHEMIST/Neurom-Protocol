@@ -1,4 +1,5 @@
 import MorphOp from '../models/MorphOp.js';
+import Cube from '../models/Cube.js';
 
 // Controller for morph operation logic
 const morphController = {
@@ -71,6 +72,67 @@ const morphController = {
       });
     } catch (error) {
       console.error('MorphController: Create morph op error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  // Update morph operation status
+  async update(req, res) {
+    const { morphOpId, status } = req.body;
+
+    // Validate input
+    if (!morphOpId || !status) {
+      return res.status(400).json({ error: 'Missing required fields: morphOpId, status' });
+    }
+    if (!['COMPLETED', 'FAILED'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status: must be COMPLETED or FAILED' });
+    }
+
+    try {
+      // Verify morphOp belongs to the user
+      MorphOp.getPendingByUserId(req.user.id, (err, morphOps) => {
+        if (err) {
+          console.error('MorphController: Failed to verify morph op:', err.message);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+        const morphOp = morphOps.find((op) => op.id === parseInt(morphOpId));
+        if (!morphOp) {
+          return res.status(403).json({ error: 'Morph operation not found or not authorized' });
+        }
+
+        // Update status
+        MorphOp.updateStatus(morphOpId, status, (err, result) => {
+          if (err) {
+            console.error('MorphController: Failed to update morph op:', err.message);
+            return res.status(500).json({ error: 'Internal server error' });
+          }
+          res.status(200).json({
+            message: 'Morph operation updated',
+            result,
+          });
+        });
+      });
+    } catch (error) {
+      console.error('MorphController: Update morph op error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  // Process morph operations and collapse skeleton
+  async process(req, res) {
+    try {
+      Cube.processMorphOps(req.user.id, (err, result) => {
+        if (err) {
+          console.error('MorphController: Failed to process morph ops:', err.message);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+        res.status(200).json({
+          message: result.message,
+          proof: result.proof,
+        });
+      });
+    } catch (error) {
+      console.error('MorphController: Process morph ops error:', error.message);
       res.status(500).json({ error: 'Internal server error' });
     }
   },
