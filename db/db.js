@@ -1,4 +1,3 @@
-// db/db.js (already provided, confirming setup for MES mailbox)
 import sqlite3 from 'sqlite3';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -22,11 +21,14 @@ db.run('PRAGMA foreign_keys = ON;');
 
 // Create tables
 const initTables = () => {
-  // Users table: stores user ID, public key, and current skeleton (balance)
+  // Users table: stores user data with INTEGER id
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      public_key TEXT NOT NULL,
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL,
+      morph_id TEXT NOT NULL UNIQUE,
       current_skel INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
@@ -35,18 +37,18 @@ const initTables = () => {
     else console.log('DB: Users table initialized');
   });
 
-  // Morph_ops table: stores morph operations (mailbox for MES)
+  // Morph_ops table: stores morph operations (MES mailbox)
   db.run(`
     CREATE TABLE IF NOT EXISTS morph_ops (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
       intent TEXT NOT NULL CHECK (intent IN ('PUSH', 'PULL')),
       value INTEGER NOT NULL CHECK (value >= 0),
-      target_id TEXT NOT NULL,
+      target_id INTEGER NOT NULL,
       signature TEXT NOT NULL,
       status TEXT NOT NULL CHECK (status IN ('PENDING', 'COMPLETED', 'FAILED')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      morph_id TEXT UNIQUE,  -- Added for blockchain proof-of-collapse
+      morph_id TEXT UNIQUE,
       FOREIGN KEY (user_id) REFERENCES users(id),
       FOREIGN KEY (target_id) REFERENCES users(id)
     )
@@ -59,7 +61,7 @@ const initTables = () => {
   db.run(`
     CREATE TABLE IF NOT EXISTS peers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
       peer_id TEXT NOT NULL UNIQUE,
       last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)

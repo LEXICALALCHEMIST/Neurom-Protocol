@@ -1,6 +1,7 @@
 ROOT: NUEROM-PROTOCOL
 
 db/
+
 // db/db.js (already provided, confirming setup for MES mailbox)
 import sqlite3 from 'sqlite3';
 import { fileURLToPath } from 'url';
