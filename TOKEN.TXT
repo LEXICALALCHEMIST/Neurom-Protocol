@@ -26,11 +26,14 @@ db.run('PRAGMA foreign_keys = ON;');
 
 // Create tables
 const initTables = () => {
-  // Users table: stores user ID, public key, and current skeleton (balance)
+  // Users table: stores user data with INTEGER id
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      public_key TEXT NOT NULL,
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL,
+      morph_id TEXT NOT NULL UNIQUE,
       current_skel INTEGER NOT NULL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
@@ -39,18 +42,18 @@ const initTables = () => {
     else console.log('DB: Users table initialized');
   });
 
-  // Morph_ops table: stores morph operations (mailbox for MES)
+  // Morph_ops table: stores morph operations (MES mailbox)
   db.run(`
     CREATE TABLE IF NOT EXISTS morph_ops (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
       intent TEXT NOT NULL CHECK (intent IN ('PUSH', 'PULL')),
       value INTEGER NOT NULL CHECK (value >= 0),
-      target_id TEXT NOT NULL,
+      target_id INTEGER NOT NULL,
       signature TEXT NOT NULL,
       status TEXT NOT NULL CHECK (status IN ('PENDING', 'COMPLETED', 'FAILED')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      morph_id TEXT UNIQUE,  -- Added for blockchain proof-of-collapse
+      morph_id TEXT UNIQUE,
       FOREIGN KEY (user_id) REFERENCES users(id),
       FOREIGN KEY (target_id) REFERENCES users(id)
     )
@@ -63,7 +66,7 @@ const initTables = () => {
   db.run(`
     CREATE TABLE IF NOT EXISTS peers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
       peer_id TEXT NOT NULL UNIQUE,
       last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
@@ -88,3 +91,602 @@ process.on('SIGINT', () => {
     process.exit(0);
   });
 });
+
+api//
+
+auth.js
+
+import express from 'express';
+import authController from '../controllers/authController.js';
+
+const router = express.Router();
+
+// POST /auth/signup - Register a new user
+router.post('/signup', authController.signup);
+
+// POST /auth/login - Authenticate a user
+router.post('/login', authController.login);
+
+export default router;
+
+morph.js/
+
+import express from 'express';
+import authMiddleware from '../middleware/authMiddleware.js';
+import morphController from '../controllers/morphController.js';
+
+const router = express.Router();
+
+// GET /morph/pending - Get pending morph operations for authenticated user
+router.get('/pending', authMiddleware, morphController.getPending);
+
+// POST /morph/create - Create a new morph operation
+router.post('/create', authMiddleware, morphController.create);
+
+// POST /morph/update - Update morph operation status
+router.post('/update', authMiddleware, morphController.update);
+
+// POST /morph/process - Process morph operations and collapse skeleton
+router.post('/process', authMiddleware, morphController.process);
+
+export default router;
+
+controllers//
+
+authController.js
+
+import User from '../models/User.js';
+import bcrypt from 'bcrypt';
+import { generateToken } from '../utils/jwt.js';
+
+// Controller for authentication logic
+const authController = {
+  // Handle user signup
+  async signup(req, res) {
+    const { username, email, password } = req.body;
+
+    // Validate input
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Missing required fields: username, email, password' });
+    }
+
+    try {
+      // Call User model to sign up
+      User.signup({ username, email, password }, (err, user) => {
+        if (err) {
+          return res.status(400).json({ error: err.message });
+        }
+        res.status(201).json({
+          message: 'User registered successfully',
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            morph_id: user.morph_id,
+            current_skel: user.current_skel,
+          },
+        });
+      });
+    } catch (error) {
+      console.error('AuthController: Signup error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  // Handle user login
+  async login(req, res) {
+    const { username, password } = req.body;
+
+    // Validate input
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Missing required fields: username, password' });
+    }
+
+    try {
+      // Find user
+      User.findByUsername(username, async (err, user) => {
+        if (err) {
+          console.error('AuthController: Login error:', err.message);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+        if (!user) {
+          return res.status(401).json({ error: 'Invalid username or password' });
+        }
+
+        // Verify password
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+          return res.status(401).json({ error: 'Invalid username or password' });
+        }
+
+        // Generate JWT
+        const token = generateToken({ id: user.id, username: user.username });
+
+        res.status(200).json({
+          message: 'Login successful',
+          token,
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            morph_id: user.morph_id,
+            current_skel: user.current_skel,
+          },
+        });
+      });
+    } catch (error) {
+      console.error('AuthController: Login error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+};
+
+export default authController;
+
+morphController.js
+
+import User from '../models/User.js';
+import bcrypt from 'bcrypt';
+import { generateToken } from '../utils/jwt.js';
+
+// Controller for authentication logic
+const authController = {
+  // Handle user signup
+  async signup(req, res) {
+    const { username, email, password } = req.body;
+
+    // Validate input
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Missing required fields: username, email, password' });
+    }
+
+    try {
+      // Call User model to sign up
+      User.signup({ username, email, password }, (err, user) => {
+        if (err) {
+          return res.status(400).json({ error: err.message });
+        }
+        res.status(201).json({
+          message: 'User registered successfully',
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            morph_id: user.morph_id,
+            current_skel: user.current_skel,
+          },
+        });
+      });
+    } catch (error) {
+      console.error('AuthController: Signup error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+
+  // Handle user login
+  async login(req, res) {
+    const { username, password } = req.body;
+
+    // Validate input
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Missing required fields: username, password' });
+    }
+
+    try {
+      // Find user
+      User.findByUsername(username, async (err, user) => {
+        if (err) {
+          console.error('AuthController: Login error:', err.message);
+          return res.status(500).json({ error: 'Internal server error' });
+        }
+        if (!user) {
+          return res.status(401).json({ error: 'Invalid username or password' });
+        }
+
+        // Verify password
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+          return res.status(401).json({ error: 'Invalid username or password' });
+        }
+
+        // Generate JWT
+        const token = generateToken({ id: user.id, username: user.username });
+
+        res.status(200).json({
+          message: 'Login successful',
+          token,
+          user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            morph_id: user.morph_id,
+            current_skel: user.current_skel,
+          },
+        });
+      });
+    } catch (error) {
+      console.error('AuthController: Login error:', error.message);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+};
+
+export default authController;
+
+middleware/
+
+authMiddleware.js
+
+import { verifyToken } from '../utils/jwt.js';
+
+const authMiddleware = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    req.user = { id: decoded.id, username: decoded.username };
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+};
+
+export default authMiddleware;
+
+models/
+
+Cube.js
+
+import db from '../db/db.js';
+import MorphOp from './MorphOp.js';
+import { ethers } from 'ethers';
+import { v4 as uuidv4 } from 'uuid';
+
+// Cube model for ZetaMorph collapse logic
+export default class Cube {
+  // Process morph operations for a user and collapse skeleton
+  static async processMorphOps(userId, callback) {
+    try {
+      // Fetch pending morph operations
+      MorphOp.getPendingByUserId(userId, async (err, morphOps) => {
+        if (err) {
+          console.error('Cube: Failed to fetch morph ops:', err.message);
+          return callback(err);
+        }
+        if (!morphOps.length) {
+          return callback(null, { message: 'No pending morph operations', proof: null });
+        }
+
+        // Initialize 12-unit skeleton (default to current_skel or 0)
+        const userQuery = 'SELECT current_skel FROM users WHERE id = ?';
+        db.get(userQuery, [userId], async (err, row) => {
+          if (err) {
+            console.error('Cube: Failed to fetch user:', err.message);
+            return callback(err);
+          }
+
+          let skeleton = Array(12).fill(0);
+          const currentSkel = row.current_skel || 0;
+          if (currentSkel > 0) {
+            skeleton[0] = currentSkel; // Simplified: store in first slot
+          }
+
+          // Apply morph operations
+          for (const op of morphOps) {
+            const { intent, value, id: morphOpId } = op;
+            if (intent === 'PUSH') {
+              skeleton[0] += value; // Simplified: add to first slot
+            } else if (intent === 'PULL') {
+              skeleton[0] = Math.max(0, skeleton[0] - value); // Prevent negative
+            }
+
+            // Mark morphOp as COMPLETED
+            MorphOp.updateStatus(morphOpId, 'COMPLETED', (err) => {
+              if (err) {
+                console.error('Cube: Failed to update morph op:', err.message);
+              }
+            });
+          }
+
+          // Collapse skeleton (sum for simplicity, can be complex grid logic)
+          const collapsedValue = skeleton.reduce((sum, val) => sum + val, 0);
+
+          // Update user's current_skel
+          const updateQuery = 'UPDATE users SET current_skel = ? WHERE id = ?';
+          db.run(updateQuery, [collapsedValue, userId], (err) => {
+            if (err) {
+              console.error('Cube: Failed to update skeleton:', err.message);
+              return callback(err);
+            }
+          });
+
+          // Generate proof-of-collapse (EIP-712 compatible)
+          const proofId = uuidv4();
+          const domain = {
+            name: 'NeuromProtocol',
+            version: '1',
+            chainId: 8453, // Base network (Coinbase's L2)
+            verifyingContract: '0x0000000000000000000000000000000000000000', // Placeholder
+          };
+          const types = {
+            Proof: [
+              { name: 'proofId', type: 'string' },
+              { name: 'userId', type: 'string' },
+              { name: 'skeleton', type: 'uint256' },
+              { name: 'morphIds', type: 'string[]' },
+            ],
+          };
+          const value = {
+            proofId,
+            userId,
+            skeleton: collapsedValue,
+            morphIds: morphOps.map((op) => op.morph_id),
+          };
+          const signer = new ethers.Wallet(ethers.Wallet.createRandom().privateKey); // Placeholder private key
+          const signature = await signer.signTypedData(domain, types, value);
+          const proof = {
+            proofId,
+            userId,
+            skeleton: collapsedValue,
+            morphIds: morphOps.map((op) => op.morph_id),
+            signature,
+          };
+
+          console.log(`Cube: Collapsed skeleton for user ${userId}: ${collapsedValue}`);
+          callback(null, { message: 'Morph operations processed', proof });
+        });
+      });
+    } catch (error) {
+      console.error('Cube: Process morph ops error:', error.message);
+      callback(error);
+    }
+  }
+}
+
+MorphOps.js
+
+import db from '../db/db.js';
+import { v4 as uuidv4 } from 'uuid';
+
+// MorphOp model for managing morph operations in the MES
+export default class MorphOp {
+  // Create a new morph operation (add to MES mailbox)
+  static create({ userId, intent, value, targetId, signature }, callback) {
+    // Validate input
+    if (!userId || !['PUSH', 'PULL'].includes(intent) || !value || !targetId || !signature) {
+      return callback(new Error('Missing or invalid fields: userId, intent, value, targetId, signature'));
+    }
+    if (value < 0) {
+      return callback(new Error('Value must be non-negative'));
+    }
+
+    // Generate unique morph_id
+    const morphId = uuidv4();
+
+    const query = `
+      INSERT INTO morph_ops (user_id, intent, value, target_id, signature, status, morph_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+    const params = [userId, intent, value, targetId, signature, 'PENDING', morphId];
+    db.run(query, params, function (err) {
+      if (err) {
+        console.error('MorphOp: Failed to create morph op:', err.message);
+        return callback(err);
+      }
+      console.log(`MorphOp: Created morph op with ID ${this.lastID}, morph_id ${morphId}`);
+      callback(null, {
+        id: this.lastID,
+        user_id: userId,
+        intent,
+        value,
+        target_id: targetId,
+        signature,
+        status: 'PENDING',
+        morph_id: morphId,
+      });
+    });
+  }
+
+  // Get pending morph operations for a user (open MES mailbox)
+  static getPendingByUserId(userId, callback) {
+    const query = `
+      SELECT id, user_id, intent, value, target_id, signature, status, morph_id, created_at
+      FROM morph_ops
+      WHERE target_id = ? AND status = 'PENDING'
+    `;
+    db.all(query, [userId], (err, rows) => {
+      if (err) {
+        console.error('MorphOp: Failed to get pending morph ops:', err.message);
+        return callback(err);
+      }
+      console.log(`MorphOp: Fetched ${rows.length} pending morph ops for user ${userId}`);
+      callback(null, rows);
+    });
+  }
+
+  // Update morph operation status (e.g., after processing)
+  static updateStatus(morphOpId, status, callback) {
+    if (!['COMPLETED', 'FAILED'].includes(status)) {
+      return callback(new Error('Invalid status: must be COMPLETED or FAILED'));
+    }
+    const query = `
+      UPDATE morph_ops
+      SET status = ?
+      WHERE id = ?
+    `;
+    db.run(query, [status, morphOpId], function (err) {
+      if (err) {
+        console.error('MorphOp: Failed to update morph op status:', err.message);
+        return callback(err);
+      }
+      console.log(`MorphOp: Updated morph op ${morphOpId} to status ${status}`);
+      callback(null, { id: morphOpId, status });
+    });
+  }
+}
+
+User.js
+
+import db from '../db/db.js';
+import bcrypt from 'bcrypt';
+import { v4 as uuidv4 } from 'uuid';
+
+// User model for managing user signup and data
+export default class User {
+  // Sign up a new user and initialize their MES
+  static signup({ username, email, password }, callback) {
+    // Validate input
+    if (!username || !email || !password) {
+      return callback(new Error('Missing required fields: username, email, password'));
+    }
+
+    // Check for existing username or email
+    db.get('SELECT id FROM users WHERE username = ? OR email = ?', [username, email], (err, row) => {
+      if (err) {
+        console.error('User: Failed to check existing user:', err.message);
+        return callback(err);
+      }
+      if (row) {
+        return callback(new Error('Username or email already exists'));
+      }
+
+      // Hash password
+      bcrypt.hash(password, 10, (err, hashedPassword) => {
+        if (err) {
+          console.error('User: Failed to hash password:', err.message);
+          return callback(err);
+        }
+
+        // Generate unique morph_id
+        const morphId = uuidv4();
+
+        // Insert user
+        const query = `
+          INSERT INTO users (username, email, password, morph_id, current_skel)
+          VALUES (?, ?, ?, ?, ?)
+        `;
+        const params = [username, email, hashedPassword, morphId, 0];
+        db.run(query, params, function (err) {
+          if (err) {
+            console.error('User: Failed to create user:', err.message);
+            return callback(err);
+          }
+          console.log(`User: Created user ${username} with morph_id ${morphId}`);
+          callback(null, {
+            id: this.lastID.toString(), // Convert INTEGER to string for consistency
+            username,
+            email,
+            morph_id: morphId,
+            current_skel: 0,
+          });
+        });
+      });
+    });
+  }
+
+  // Find user by username (for login)
+  static findByUsername(username, callback) {
+    const query = `
+      SELECT id, username, email, password, morph_id, current_skel
+      FROM users
+      WHERE username = ?
+    `;
+    db.get(query, [username], (err, row) => {
+      if (err) {
+        console.error('User: Failed to find user:', err.message);
+        return callback(err);
+      }
+      if (row) {
+        row.id = row.id.toString(); // Ensure id is string
+      }
+      callback(null, row);
+    });
+  }
+}
+
+
+utils/
+
+jwt.js
+
+import jwt from 'jsonwebtoken';
+
+const SECRET = process.env.JWT_SECRET || 'your-secret-key'; // Use .env in production
+
+// Generate JWT token
+export const generateToken = (payload) => {
+  return jwt.sign(payload, SECRET, { expiresIn: '1h' });
+};
+
+// Verify JWT token (for middleware later)
+export const verifyToken = (token) => {
+  try {
+    return jwt.verify(token, SECRET);
+  } catch (error) {
+    throw new Error('Invalid token');
+  }
+};
+
+root/ server.js
+
+import express from 'express';
+import cors from 'cors';
+import authRouter from './api/auth.js';
+import morphRouter from './api/morph.js';
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use('/auth', authRouter);
+app.use('/morph', morphRouter);
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+.env /
+JWT_SECRET=your-secure-secret-key
+PORT=3001
+
+.json
+
+{
+  "name": "neurom-protocol",
+  "version": "1.0.0",
+  "description": "Protocol Layer for LSD + Zeta|Morph Logic NEURUM Protocol: Hive GPU Router for Zero-Logic Symbolic Computing",
+  "main": "router.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LEXICALALCHEMIST/Neurom-Protocol.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/LEXICALALCHEMIST/Neurom-Protocol/issues"
+  },
+  "homepage": "https://github.com/LEXICALALCHEMIST/Neurom-Protocol#readme",
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.3.0",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.5",
+    "ethers": "^6.14.4",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^3.3.2",
+    "simple-peer": "^9.11.1",
+    "sqlite3": "^5.1.7",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.2"
+  }
+}
