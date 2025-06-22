@@ -24,11 +24,11 @@ const morphController = {
 
   // Create a new morph operation
   async create(req, res) {
-    const { intent, value, targetUsername, signature } = req.body;
+    const { intent, value, targetMorphId, signature } = req.body;
 
     // Validate input
-    if (!intent || !value || !targetUsername || !signature) {
-      return res.status(400).json({ error: 'Missing required fields: intent, value, targetUsername, signature' });
+    if (!intent || !value || !targetMorphId || !signature) {
+      return res.status(400).json({ error: 'Missing required fields: intent, value, targetMorphId, signature' });
     }
     if (!['PUSH', 'PULL'].includes(intent)) {
       return res.status(400).json({ error: 'Invalid intent: must be PUSH or PULL' });
@@ -38,24 +38,24 @@ const morphController = {
     }
 
     try {
-      // Find target user by username
+      // Validate targetMorphId exists in users.morph_id
       const User = (await import('../models/User.js')).default;
-      User.findByUsername(targetUsername, (err, targetUser) => {
+      User.findByMorphId(targetMorphId, (err, targetUser) => { // Assuming findByMorphId method
         if (err) {
           console.error('MorphController: Failed to find target user:', err.message);
           return res.status(500).json({ error: 'Internal server error' });
         }
         if (!targetUser) {
-          return res.status(404).json({ error: 'Target user not found' });
+          return res.status(404).json({ error: 'Target morph ID not found' });
         }
 
         // Create morph operation
         MorphOp.create(
           {
-            userId: req.user.id,
+            userId: req.user.id, // Sender from authenticated user
             intent,
             value,
-            targetId: targetUser.id,
+            targetId: targetUser.id, // Map targetMorphId to user.id
             signature,
           },
           (err, morphOp) => {

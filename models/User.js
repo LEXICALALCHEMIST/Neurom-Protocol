@@ -73,4 +73,23 @@ export default class User {
       callback(null, row);
     });
   }
+
+  // Find user by morph_id
+  static findByMorphId(morphId, callback) {
+    const query = `
+      SELECT id, username, email, password, morph_id, current_skel
+      FROM users
+      WHERE morph_id = ?
+    `;
+    db.get(query, [morphId], (err, row) => {
+      if (err) {
+        console.error('User: Failed to find user by morphId:', err.message);
+        return callback(err);
+      }
+      if (row) {
+        row.id = row.id.toString(); // Ensure id is string
+      }
+      callback(null, row);
+    });
+  }
 }
